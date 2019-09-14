@@ -1,0 +1,2 @@
+# Income-inequality
+Gaps in earnings between a nation’s most affluent and the rest of the country continue to grow every year. This project explores this major research issue of uneven distribution of income in the U.S. and other countries between 1988 and 2008. We primarily used three datasets to investigate this topic: 1) Lakner-Milanovic World Panel Income Distribution (LM-WPID) 2) Ventile 3) World Income Distribution (WYD)
