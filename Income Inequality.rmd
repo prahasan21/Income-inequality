@@ -1,0 +1,335 @@
+---
+title: "EDA_Miniproject"
+author: "Team Indonesia - Chhavi Sharma, Gopal Seshadri, Prahasan Gadugu, Supriya Ayalur Balasubramanian"
+date: "February 9, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##  Loading Libraries
+```{r load.lib, message = FALSE, warning = FALSE}
+library(haven)
+library(readstata13)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(gridExtra)
+library(viridis)
+library(MASS)
+```
+
+
+## Reading Data
+```{r reading.data, message = FALSE, warning = FALSE}
+lm.wpid.df <- read.dta13("LM_WPID_web_2.dta", convert.dates = TRUE, convert.factors = TRUE, missing.type = FALSE, convert.underscore = FALSE, nonint.factors = TRUE)
+
+lm.wpid.df <- na.omit(lm.wpid.df)
+
+#Selecting the required Columns
+lm.wpid.df <- lm.wpid.df %>% 
+                mutate(decile = factor(group)) %>%
+                  dplyr::select(country, contcod, region, bin_year, decile, RRinc, RRmean) 
+
+
+ventile.df <- read.dta13("ventile_2011_for_release_LCU.dta", convert.dates = TRUE, convert.factors = TRUE, missing.type = FALSE, convert.underscore = FALSE, nonint.factors = TRUE)
+
+ventile.df <- na.omit(ventile.df)
+
+#Selecting the required Columns
+ventile.df <- ventile.df %>% 
+                mutate(contcod = factor(contcod),
+                       ventile = factor(ventile)) %>%
+                  dplyr::select(contcod, ventile, ventile_income)
+
+
+wyd.df <- read.dta13("wyd_88_05_for_release.dta", convert.dates = TRUE, convert.factors = TRUE, missing.type = FALSE, convert.underscore = FALSE, nonint.factors = TRUE)
+
+wyd.df <- na.omit(wyd.df)
+
+wyd.df <- wyd.df %>% 
+            mutate(region = factor(region)) %>%
+              dplyr::select (contcod, region) %>%
+                distinct(contcod, region)
+
+```
+
+
+## Question 1
+### How has per capita income for each decile in the U.S. changed since 1988?
+
+```{r question.1, fig.width = 10, fig.height = 7}
+lm.wpid.usa.df <- subset(lm.wpid.df, contcod == 'USA')
+
+lm.wpid.usa.groups.df <- lm.wpid.usa.df %>%
+                          group_by(bin_year) %>%
+                            summarise(mean = mean(RRmean))
+
+
+  ggplot() + 
+    geom_line(data = lm.wpid.usa.df, aes(x = bin_year, y = RRinc, group = decile, color = decile), size = 2) + 
+      geom_line(data = lm.wpid.usa.groups.df, aes(x = bin_year, y = mean), color = 'blue', linetype = 2, size = 2, alpha = .6) +
+        xlab('Year') +
+          ylab('Per Capita Income') +
+            ggtitle('Per capita income for each decile in the United States from 1988 to 2008') +
+              scale_x_continuous(breaks = unique(lm.wpid.usa.df$bin_year)) +
+                labs(color = 'Decile') +
+                  theme_bw() +
+                    theme(text = element_text(size = 12),
+                          axis.text = element_text(size = 12)) +
+                      scale_color_viridis_d()
+  
+
+  
+  lm.wpid.usa2.df <- lm.wpid.usa.df %>%
+                      dplyr::select(country, contcod, bin_year, decile, RRinc) %>%
+                        spread(bin_year, RRinc) %>%
+                          mutate(inc_in_1993 = (`1993` - `1988`),
+                                 inc_in_1998 = (`1998` - `1993`),
+                                 inc_in_2003 = (`2003` - `1998`),
+                                 inc_in_2008 = (`2008` - `2003`)) %>%
+                            dplyr::select(country, contcod, decile, inc_in_1993, inc_in_1998, inc_in_2003, inc_in_2008) %>%
+                              mutate(`1993` = inc_in_1993,
+                                     `1998` = inc_in_1998,
+                                     `2003` = inc_in_2003,
+                                     `2008` = inc_in_2008) %>%
+                                dplyr::select(country, contcod, decile, `1993`, `1998`, `2003`, `2008`) %>%
+                                  gather(key = 'bin_year', val = 'difference', `1993`, `1998`, `2003`, `2008`, -country, -contcod, -decile)
+  
+  #str(lm.wpid.usa2.df)
+  
+  lm.wpid.usa2.df %>% 
+    ggplot(aes(x = bin_year, y = difference, color = decile, group = decile), alpha = .4) +
+      geom_line(size = 2) +
+        xlab('Year') +
+          ylab('Difference in Per Capita Income') +
+            ggtitle('Difference in Per capita income for each decile in the United States from 1988 to 2008') +
+              scale_x_discrete(breaks = c(1993, 1998, 2003, 2008)) +
+                labs(color = 'Decile') +
+                  theme_bw() +
+                    theme(text = element_text(size = 12), 
+                          axis.text = element_text(size = 12)) +
+                      scale_color_viridis_d()
+```
+
+
+## Question 2
+### How does the present distribution of income, relative to a country's mean, differ between selected countries?
+
+```{r question.2, fig.width = 10, fig.height = 10}
+
+ventile.five.df <- subset(ventile.df, contcod %in% c('USA', 'GBR', 'DEU', 'IND', 'GNB')) %>%
+                    group_by(contcod) %>%
+                      mutate(mean = mean(ventile_income),
+                             sd = sd(ventile_income)) %>%
+                        ungroup() %>%
+                          mutate(adj_ventile_income = (ventile_income - mean)/sd,
+                                 ventile_to_mean_ratio = ventile_income / mean)
+
+
+ventile.five.df %>% 
+    ggplot() + 
+      geom_line(aes(x = ventile, y = adj_ventile_income, group = contcod, color = contcod), alpha = .6, size = 2) + 
+        geom_hline(aes(yintercept = 0), linetype = 2, alpha = .6) +
+          #facet_wrap(~ contcod, nrow = 5) +
+            xlab('Ventiles') +
+              ylab('Z score of Ventile Income') +
+                ggtitle('Distribution of Per Capita Income of each ventile for Five Different Nations') +
+                  labs(color = 'Country Code') +
+                    theme_bw() +
+                      theme(text = element_text(size = 12),
+                            axis.text = element_text(size = 12)) +
+                        scale_color_viridis_d()
+
+
+ventile.five.df %>%
+  filter(contcod %in% c('USA', 'GBR', 'DEU')) %>%
+    ggplot(aes(x = ventile, y = ventile_to_mean_ratio, group = contcod, color = contcod)) +
+      geom_line(alpha = .6, size = 2) +
+        geom_hline(yintercept = 1, color = 'black', linetype = 2, alpha = .6) +
+        xlab('Ventile') +
+          ylab('Ventile Income to Country\'s Mean Income Ratio') +
+            ggtitle('Ventile vs Ventile Income to Country\'s Mean Income Ratio') +
+              labs(color = 'Country Code') +
+                theme_bw() +
+                  theme(text = element_text(size = 12),
+                        axis.text = element_text(size = 12)) +
+                    scale_color_viridis_d()
+
+
+  
+  ventile.five.df %>%
+    ggplot(aes(x = contcod, y = ventile_to_mean_ratio, color = contcod)) +
+      geom_point(alpha = .2, size = 4) +
+        geom_hline(yintercept = 1, color = 'black', linetype = 2, alpha = .6) +
+        xlab('Country') +
+          ylab('Ventile Income to Country\'s Mean Income Ratio') +
+            ggtitle('Country vs Ventile Income to Country\'s Mean Income Ratio') +
+              labs(color = 'Country Code') +
+                theme_bw() +
+                  theme(text = element_text(size = 12), 
+                        axis.text = element_text(size = 12)) +
+                    scale_color_viridis_d()
+
+```
+
+
+## Question 3
+### Is the percentage of income earned by the top 5 percent in a country related to mean income in that country? What about the percentage of income earned by the bottom 5 percent?
+
+```{r question.3a, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 10}
+ventile2.df <- inner_join(ventile.df, wyd.df, by = 'contcod') 
+
+ventile.mean.ratio.df <- ventile2.df %>%
+                        group_by(contcod) %>%
+                          mutate(mean_country = mean(ventile_income)) %>%
+                            ungroup() %>%
+                              mutate(ventile_to_mean_ratio = ventile_income/mean_country,
+                                     percentage_to_overall = ventile_income/(20 * mean_country)) 
+
+grid.arrange(
+ventile.mean.ratio.df %>%
+  filter(ventile == 1 ) %>%
+    ggplot(aes(x = mean_country, y = percentage_to_overall, color = region)) +
+      geom_point(alpha = .6, size = 4) +
+        geom_smooth(method = 'rlm', se = FALSE, method.args = list(psi = psi.bisquare), alpha = .6) +
+          xlab('Country\'s Mean Income') +
+            ylab('Bottom Ventile\'s % of income') +
+              ggtitle('Country\'s Mean Income vs Bottom Ventile\'s % of Income') +
+                scale_x_log10(labels =  comma) +
+                  theme_bw() +
+                    theme(text = element_text(size = 12),
+                          axis.text = element_text(size = 12)) +
+                      scale_color_viridis_d(),
+
+ventile.mean.ratio.df %>%
+  filter(ventile == 20 ) %>%
+    ggplot(aes(x = mean_country, y = percentage_to_overall, color = region)) +
+      geom_point(alpha = .6, size = 4) +
+        geom_smooth(method = 'rlm', se = FALSE, method.args = list(psi = psi.bisquare), alpha = .6) +
+          xlab('Country\'s Mean Income') +
+            ylab('Top Ventile\'s % of income') +
+              ggtitle('Country\'s Mean Income vs Top Ventile\'s % of Income') +
+                scale_x_log10(labels = comma) +
+                  theme_bw() +
+                    theme(text = element_text(size = 12),
+                          axis.text = element_text(size = 12)) +
+                      scale_color_viridis_d() +
+                        annotate('text', x = 1e+06, y = 0.69, color = '#660066', alpha = .6, label = ventile.mean.ratio.df %>%
+                                                                                  filter(region == 'Africa') %>%
+                                                                                    filter(percentage_to_overall == max(percentage_to_overall)) %>%
+                                                                                      dplyr::select(contcod)), 
+
+ncol = 1)
+
+# label_africa <- ventile.mean.ratio.df %>% filter(region == 'Latin America') %>% filter(ventile_to_mean_ratio == max(ventile_to_mean_ratio)) %>% select(contcod)
+# print(label_africa)
+
+ventile.mean.ratio.df %>%
+  filter(ventile == 1 | ventile == 20) %>%
+    ggplot(aes(x = region, y = ventile_to_mean_ratio, color = ventile)) +
+      geom_point(alpha = .2, size = 5) +
+        geom_hline(yintercept = 1, color = 'black') +
+        xlab('Region') +
+          ylab('Ventile Income to Country\'s Mean Income ratio') +
+            ggtitle('Region vs Ventile Income to Country\'s Mean Income ratio') +
+            annotate('text', x = 'Africa', y = 13.2, color = '#3399FF', alpha = .6, label = ventile.mean.ratio.df %>%
+                                                                                  filter(region == 'Africa') %>%
+                                                                                    filter(ventile_to_mean_ratio == max(ventile_to_mean_ratio)) %>%
+                                                                                      dplyr::select(contcod)) +
+              annotate('text', x = 'Asia', y = 5.8, color = '#3399FF', alpha = .6, label = ventile.mean.ratio.df %>%
+                                                                                  filter(region == 'Asia') %>%
+                                                                                    filter(ventile_to_mean_ratio == max(ventile_to_mean_ratio)) %>%
+                                                                                      dplyr::select(contcod)) +
+
+              annotate('text', x = 'Latin America', y = 7, color = '#3399FF', alpha = .6, label = ventile.mean.ratio.df %>%
+                                                                                  filter(region == 'Latin America') %>%
+                                                                                    filter(ventile_to_mean_ratio == max(ventile_to_mean_ratio)) %>%
+                                                                                      dplyr::select(contcod)) +
+                annotate('text', x = 'Eastern Europe', y = 5.2, color = '#3399FF', alpha = .6, label = ventile.mean.ratio.df %>%
+                                                                                  filter(region == 'Eastern Europe') %>%
+                                                                                    filter(ventile_to_mean_ratio == max(ventile_to_mean_ratio)) %>%
+                                                                                      dplyr::select(contcod)) +
+                  annotate('text', x = 'West', y = 4.45, color = '#3399FF', alpha = .6, label = ventile.mean.ratio.df %>%
+                                                                                  filter(region == 'West') %>%
+                                                                                    filter(ventile_to_mean_ratio == max(ventile_to_mean_ratio)) %>%
+                                                                                      dplyr::select(contcod)) +
+            labs(color = 'Ventile') +
+              scale_color_manual(values = c('#FF9966', '#3399FF')) +
+                theme_bw() +
+                  theme(text = element_text(size = 12),
+                        axis.text = element_text(size = 12)) 
+```
+
+
+```{r question.3b, message = FALSE, warning = FALSE, fig.width = 14, fig.height = 10 }
+
+
+ventile.final.df <- ventile2.df %>%
+                group_by(region, ventile) %>%
+                  mutate(mean_ventile_income = mean(ventile_income)) %>%
+                    ungroup() %>%
+                      group_by(region) %>%
+                        mutate(mean_region_income = mean(ventile_income)) %>%
+                          ungroup() 
+
+# str(ventile.final.df)
+
+ventile.wo.top5.df <- ventile2.df %>%
+                        filter(ventile != 20) %>%
+                          group_by(region) %>%
+                            mutate(mean_region_income_wo_top5 = mean(ventile_income)) %>%
+                              ungroup() %>%
+                                dplyr::select(region, mean_region_income_wo_top5) %>%
+                                  distinct(region, mean_region_income_wo_top5)
+
+# str(ventile.wo.top5.df)
+
+ventile.wo.bot5.df <- ventile2.df %>%
+                        filter(ventile != 1) %>%
+                          group_by(region) %>%
+                            mutate(mean_region_income_wo_bot5 = mean(ventile_income)) %>%
+                              ungroup() %>%
+                                dplyr::select(region, mean_region_income_wo_bot5) %>%
+                                  distinct(region, mean_region_income_wo_bot5)
+
+# str(ventile.wo.top5.df)
+
+
+
+ventile.final.df <- inner_join(ventile.final.df, ventile.wo.top5.df, by = 'region') %>%
+              inner_join(ventile.wo.bot5.df, by = 'region') %>%
+                dplyr::select(ventile, region, mean_ventile_income, mean_region_income, mean_region_income_wo_top5, mean_region_income_wo_bot5) %>%
+                  distinct(ventile, region, mean_ventile_income, mean_region_income, mean_region_income_wo_top5, mean_region_income_wo_bot5)
+
+# head(subset(ventile.final.df, contcod == 'USA'))
+ventile.final.df %>%
+  ggplot(aes(x = ventile, y = mean_ventile_income/mean_region_income , color = region)) +
+    geom_point(size = 4, alpha = .6) +
+      geom_hline(aes(yintercept = mean_region_income/mean_region_income), color = 'black', linetype = 1) +
+        geom_hline(aes(yintercept = mean_region_income_wo_top5/ mean_region_income), color = 'blue', linetype = 2, size = 1.5, alpha = .4) +
+          geom_hline(aes(yintercept = mean_region_income_wo_bot5/ mean_region_income), color = 'green', linetype = 2, size = 1.5, alpha = .4) +
+            facet_wrap( ~ region, ncol = 5) +
+              # scale_y_log10() +
+                xlab('Ventile') +
+                  ylab('Ratio of Mean Ventile Income to Mean Region Income') +
+                    ggtitle('Region wise comparision on effect of 1st and 20th percentile') +
+                    #coord_cartesian(ylim = c(0, 2)) +
+                      scale_y_continuous(labels = comma) +
+                        #scale_color_discrete(guide = FALSE) +
+                          scale_x_discrete(breaks = seq(2, 20, by = 2)) +
+                            theme_bw() +
+                              theme(text = element_text(size = 12),
+                                    axis.text = element_text(size = 12)) +
+                                scale_color_viridis_d()
+
+```
+
+
+
